@@ -52,7 +52,7 @@ func displayProgress(updated, total int) {
 	if total <= 0 {
 		log.Infof("progress: %d", updated)
 	} else {
-		log.Infof("progress: %d of %d (%d\\%)", updated, total, (100 * int(updated) / total))
+		log.Infof("progress: %d of %d (%d%%)", updated, total, (100 * int(updated) / total))
 	}
 }
 
