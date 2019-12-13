@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -60,10 +61,12 @@ func main() {
 	// read args
 	entityNamePt := flag.String("kind", "", "Datastore kind")
 	skipCountPt := flag.Bool("skipCount", false, "Skip initial count")
+	allowAttributeDeletionPt := flag.Bool("allowAttributeDeletion", false, "Allow writing a document with less fields than the original one")
 	emitProgressEveryPt := flag.Uint64("emitProgressEvery", 1000, "Display progress every N records")
 	flag.Parse()
 
 	dsKind := *entityNamePt
+	allowAttributeDeletion := *allowAttributeDeletionPt
 
 	if dsKind == "" {
 		flag.Usage()
@@ -126,6 +129,10 @@ func main() {
 
 		if err == iterator.Done {
 			break
+		}
+
+		if err != nil && allowAttributeDeletion && strings.Contains(err.Error(), "no such struct field") {
+			continue
 		}
 
 		if err != nil {
