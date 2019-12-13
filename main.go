@@ -131,14 +131,16 @@ func main() {
 			break
 		}
 
-		if err != nil && allowAttributeDeletion && strings.Contains(err.Error(), "no such struct field") {
-			continue
-		}
+		noStructErr := err != nil && allowAttributeDeletion && strings.Contains(err.Error(), "no such struct field")
 
-		if err != nil {
+		if err != nil && !noStructErr {
 			log.Fatal(err)
 		}
 
 		docs <- doc
 	}
+
+	close(docs)
+	wg.Wait()
+	log.Println("done")
 }
