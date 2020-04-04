@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: datastorefix
+spec:
+  containers:
+  - name: datastorefix
+    imagePullPolicy: Always
+    image: eu.gcr.io/your_project_name/datastorefix
+    args: ["-kind", ""]
+
+    env:
+      - name: GOOGLE_CLOUD_PROJECT
+        value: your_project_name
+      - name: DATASTORE_PROJECT_ID
+        value: your_project_name
+  
+  restartPolicy: Never

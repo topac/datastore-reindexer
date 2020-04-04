@@ -38,15 +38,20 @@ func newDatastoreClient(ctx context.Context) *datastore.Client {
 	return client
 }
 
-func putDocument(client *datastore.Client, doc document) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+func putDocument(client *datastore.Client, doc document) error {
+	var err error
 
-	_, err := client.Put(ctx, doc.ID, &doc)
-
-	if err != nil {
-		log.Fatalf("failed to put entity: %v", err)
+	for i := 0; i < 6; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		_, err := client.Put(ctx, doc.ID, &doc)
+		cancel()
+		if err == nil {
+			return nil
+		}
+		time.Sleep(time.Duration(i+3) * time.Second)
 	}
+
+	return err
 }
 
 func displayProgress(updated, total int) {
@@ -59,14 +64,19 @@ func displayProgress(updated, total int) {
 
 func main() {
 	// read args
-	entityNamePt := flag.String("kind", "", "Datastore kind")
-	skipCountPt := flag.Bool("skipCount", false, "Skip initial count")
-	allowAttributeDeletionPt := flag.Bool("allowAttributeDeletion", false, "Allow writing a document with less fields than the original one")
-	emitProgressEveryPt := flag.Uint64("emitProgressEvery", 1000, "Display progress every N records")
-	flag.Parse()
+	var skip, emitProgressEvery uint64
+	var dsKind string
+	var allowAttributeDeletion, skipCount bool
+	var numWorkers int
 
-	dsKind := *entityNamePt
-	allowAttributeDeletion := *allowAttributeDeletionPt
+	flag.StringVar(&dsKind, "kind", "", "Datastore kind")
+	flag.BoolVar(&allowAttributeDeletion, "allowAttributeDeletion", false, "Allow writing a document with less fields than the original one")
+	flag.BoolVar(&skipCount, "skipCount", false, "Skip initial count")
+	flag.IntVar(&numWorkers, "workers", 4, "The number of workers to use")
+	flag.Uint64Var(&skip, "skip", 0, "skip the first N documents")
+	flag.Uint64Var(&emitProgressEvery, "emitProgressEvery", 1000, "Display progress every N records")
+
+	flag.Parse()
 
 	if dsKind == "" {
 		flag.Usage()
@@ -85,21 +95,20 @@ func main() {
 	// count
 	var total int
 	var err error
-	if !(*skipCountPt) {
-		log.Infof("counting...")
+	if !skipCount {
+		log.Infof("main: count started, kind=%s", dsKind)
 		total, err = client.Count(context.Background(), query)
 		if err != nil {
-			log.Fatalf("failed to count")
+			log.Fatalf("main: count failed: %v", err)
 		}
 
-		log.Infof("total documents: %d", total)
+		log.Infof("main: count completed, total=%d", total)
 	}
 
 	// spawn write workers
 	var wg sync.WaitGroup
 	var updated uint64
-	numWorkers := 10 // arbitrary value
-	chanSize := 250  // arbitrary value
+	chanSize := numWorkers * 50 // arbitrary value
 	if total <= chanSize {
 		chanSize = 0
 	}
@@ -109,12 +118,17 @@ func main() {
 		wg.Add(1)
 		go func() {
 			for d := range docs {
-				putDocument(client, d)
+				currentIndex := atomic.AddUint64(&updated, 1)
 
-				if updated%(*emitProgressEveryPt) == 0 {
+				if currentIndex >= skip {
+					if err := putDocument(client, d); err != nil {
+						log.Fatalf("main: putDocument failed, counter=%d, err=%v", updated, err)
+					}
+				}
+
+				if updated%emitProgressEvery == 0 {
 					displayProgress(int(updated), total)
 				}
-				atomic.AddUint64(&updated, 1)
 			}
 			wg.Done()
 		}()
@@ -142,5 +156,5 @@ func main() {
 
 	close(docs)
 	wg.Wait()
-	log.Println("done")
+	log.Infof("main: done")
 }
